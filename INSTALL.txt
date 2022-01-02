@@ -1,0 +1,33 @@
+# Basic setup guide
+
+# become root
+sudo -i
+
+# install nginx and fcgiwrap
+apt install nginx fcgiwrap
+
+# start fcgiwrap service
+systemctl start fcgiwrap
+
+# download sireum.py to default website directory
+cd /var/www/html
+wget https://raw.githubusercontent.com/adakaleh/sireum/master/sireum.py
+chmod 755 sireum.py
+
+# configure nginx to serve sireum.py using fcgiwrap
+nano /etc/nginx/sites-enabled/default
+
+# add this inside the server {...} block:
+
+	location /sireum.py {
+		gzip off;
+		fastcgi_pass unix:/var/run/fcgiwrap.socket;
+		include /etc/nginx/fastcgi_params;
+		fastcgi_param SCRIPT_FILENAME /var/www/html$fastcgi_script_name;
+		fastcgi_param NO_BUFFERING 1;
+	}
+
+# restart nginx
+systemctl restart nginx
+
+# visit http://localhost/sireum.py
