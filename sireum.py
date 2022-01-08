@@ -222,6 +222,49 @@ def get_allowed_moves(board, style, previous_move=0, recurse=True):
         raise Exception("Style not supported.")
     return allowed_moves
 
+def ai(board, style, previous_move=0, ai_player = True, depth = 10):
+
+    # Returns weighted moves:
+    #   0 - certain win
+    #   0.0001...1 - higher number -> higher chance of losing
+
+    # TODO: replace depth with recursion_budget (to be split among
+    # branches and redistributed when appropriate)
+
+    if depth == 0:
+        # reached maximum depth, can't explore further;
+        # assume this is a losing branch with weight = 5
+        return {-1: 0.5}
+    om = get_om_position(board)
+    # get allowed moves
+    allowed_moves = get_allowed_moves(board, style, previous_move)
+    if not allowed_moves:
+        # if it's the AI's turn, it loses - and viceversa
+        return {-1: int(ai_player)}
+    weighted_moves = {}
+    for move in allowed_moves:
+        # get future weighted moves
+        future_wm = ai(transform_board(board, om, [move]), style, move, not ai_player, depth - 1)
+        if ai_player: # human makes next move
+            if all(m == 0 for m in future_wm.values()):
+                # all moves are losing moves for the human;
+                # this is a wining branch for the AI
+                weighted_moves[move] = 0
+                return weighted_moves # AI will choose this path, no need to continue
+            else:
+                # calculate move weight based on the proportion of losing moves
+                winning_move_count = list(future_wm.values()).count(0)
+                weighted_moves[move] = 1 - winning_move_count / len(future_wm)
+        else: # AI makes next move
+            if 0 in future_wm.values():
+                # AI has a winning move;
+                # this is a wining branch for the AI
+                weighted_moves[move] = 0
+            else:
+                # calculate move weight based on the proportion of losing moves
+                winning_move_count = list(future_wm.values()).count(0)
+                weighted_moves[move] = 1 - winning_move_count / len(future_wm)
+    return weighted_moves
 
 ###############################################
 
@@ -229,7 +272,7 @@ def get_allowed_moves(board, style, previous_move=0, recurse=True):
 # get parameters from query string
 query = parse_qs(os.environ["QUERY_STRING"])
 
-if "style" in query and "size" in query:
+if "opponent" in query and "style" in query and "size" in query:
     # redirect to ?board=<random>, where
     # <random> = size * size random bits, hex-encoded
     try:
@@ -245,9 +288,21 @@ if "style" in query and "size" in query:
     nbits = size ** 2
     nbytes = math.ceil(nbits / 8) # the last few bits will be ignored
     board_bytes = os.urandom(nbytes)
-    redirect_to("?board=" + board_bytes.hex())
+    query_string = urlencode({
+        "opponent": query["opponent"][0],
+        "style": query["style"][0],
+        "board": board_bytes.hex()
+    })
+    redirect_to("?" + query_string)
 
-elif "board" in query:
+
+elif "opponent" in query and "style" in query and "board" in query:
+    opponent = query["opponent"][0]
+    style = query["style"][0]
+    if opponent not in ("human", "computer"):
+        respond("opponent can only be human or computer")
+    if style != "push":
+        respond("only push style is currently supported")
     initial_board_state = board_from_hex_string(query["board"][0])
     board = copy_board(initial_board_state)
     om = get_om_position(board)
@@ -259,21 +314,42 @@ elif "board" in query:
             respond("moves must be integers")
         previous_moves = list(map(int, query["moves"][0]))
         board = transform_board(board, om, previous_moves)
+    previous_move = previous_moves[-1] if previous_moves else 0
 
     # get allowed moves
-    allowed_moves = get_allowed_moves(
-            board = board,
-            style = "push",
-            previous_move = previous_moves[-1] if previous_moves else 0
-        )
+    allowed_moves = get_allowed_moves(board, style, previous_move)
+
+    if allowed_moves and query["opponent"][0] == "computer":
+        if len(previous_moves) % 2: # AI - odd moves, human - even moves
+            if len(board) == 5:
+                # table is small, AI can afford to predict the entire game
+                ai_moves = ai(board, style, previous_move, depth=100)
+            else:
+                # table is large, limit the AI to a reasonable depth
+                ai_moves = ai(board, style, previous_move, depth=10)
+            # choose move with smallest weight
+            move = min(list(ai_moves), key=ai_moves.get)
+            new_query = {
+                "opponent": opponent,
+                "style": style,
+                "board": query["board"][0],
+                "moves": query["moves"][0] + str(move),
+            }
+            if ai_moves[move] == 0:
+                new_query["ai_win"] = 1
+            redirect_to("?" + urlencode(new_query))
+
     # display board
     board_html = "<center>"
     # - heading
     if allowed_moves:
         player = int(len(previous_moves) % 2) + 1
+        ai_win_indicator = ""
+        if "ai_win" in query and query["ai_win"][0] == "1":
+            ai_win_indicator = "<h4>The AI will win.</h4>"
         board_html += f"""<h2>Player: {player} \
 | Turn: {len(previous_moves) + 1} \
-| <a href="{os.environ["SCRIPT_NAME"]}">Home</a></h2>"""
+| <a href="{os.environ["SCRIPT_NAME"]}">Home</a></h2>{ai_win_indicator}"""
     else:
         winner = int(not len(previous_moves) % 2) + 1
         board_html += f"""<h2>Player {winner} wins!
@@ -303,6 +379,8 @@ elif "board" in query:
                     if "moves" in query:
                         moves = query["moves"][0] + moves
                     query_string = urlencode({
+                        "opponent": query["opponent"][0],
+                        "style": query["style"][0],
                         "board": query["board"][0],
                         "moves": moves,
                     })
@@ -333,6 +411,18 @@ else:
 <p><a href="https://leftclickghinea.ro/sireum-prezentare/">About</a>
     | <a href="https://github.com/adakaleh/sireum">Code</a></p>
 <form>
+  <fieldset>
+    <legend>Opponent</legend>
+    <label>
+      <input type="radio" name="opponent" value="human" required checked >
+      Human
+    </label>
+    <label>
+      <input type="radio" name="opponent" value="computer" required >
+      Computer
+    </label>
+  </fieldset>
+
   <fieldset>
     <legend>Game Style</legend>
     <label>
