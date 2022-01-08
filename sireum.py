@@ -118,9 +118,9 @@ def board_from_hex_string(hex_string):
     return board
 
 def get_om_position(board):
-    for i in range(len(board)):
-        for j in range(len(board[i])):
-            if board[i][j] in (OM1, OM2):
+    for i, row in enumerate(board):
+        for j, item in enumerate(board[i]):
+            if item == OM1 or item == OM2:
                 return (i, j)
 
 def piece_at(board, row, col):
