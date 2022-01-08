@@ -134,9 +134,8 @@ def copy_board(board):
         new_board.append(row.copy())
     return new_board
 
-def transform_board(board, moves):
+def transform_board(board, om, moves):
     board = copy_board(board)
-    om = get_om_position(board)
     for move in moves:
         # north
         if move == 8 and piece_at(board, om[0]-1, om[1]):
@@ -180,7 +179,7 @@ def get_allowed_moves(board, style, previous_move=0, recurse=True):
         if piece_at(board, om[0]-1, om[1]) == om_vertical_color:
             # check if this move allows for future moves
             if not recurse or get_allowed_moves(
-                    board=transform_board(board, [8]),
+                    board=transform_board(board, om, [8]),
                     style="push",
                     recurse=False):
                 allowed_moves[8] = (om[0]-1, om[1])
@@ -188,7 +187,7 @@ def get_allowed_moves(board, style, previous_move=0, recurse=True):
         if piece_at(board, om[0]+1, om[1]) == om_vertical_color:
             # check if this move allows for future moves
             if not recurse or get_allowed_moves(
-                    board=transform_board(board, [2]),
+                    board=transform_board(board, om, [2]),
                     style="push",
                     recurse=False):
                 allowed_moves[2] = (om[0]+1, om[1])
@@ -196,7 +195,7 @@ def get_allowed_moves(board, style, previous_move=0, recurse=True):
         if piece_at(board, om[0], om[1]-1) == om_horizontal_color:
             # check if this move allows for future moves
             if not recurse or get_allowed_moves(
-                    board=transform_board(board, [4]),
+                    board=transform_board(board, om, [4]),
                     style="push",
                     recurse=False):
                 allowed_moves[4] = (om[0], om[1]-1)
@@ -204,7 +203,7 @@ def get_allowed_moves(board, style, previous_move=0, recurse=True):
         if piece_at(board, om[0], om[1]+1) == om_horizontal_color:
             # check if this move allows for future moves
             if not recurse or get_allowed_moves(
-                    board=transform_board(board, [6]),
+                    board=transform_board(board, om, [6]),
                     style="push",
                     recurse=False):
                 allowed_moves[6] = (om[0], om[1]+1)
@@ -214,7 +213,7 @@ def get_allowed_moves(board, style, previous_move=0, recurse=True):
         # fi urmată de o deplasare a piesei Om în tura următoare."
         if previous_move != 5:
             if get_allowed_moves(
-                    board=transform_board(board, [5]),
+                    board=transform_board(board, om, [5]),
                     style="push",
                     previous_move=5,
                     recurse=False):
@@ -251,6 +250,7 @@ if "style" in query and "size" in query:
 elif "board" in query:
     initial_board_state = board_from_hex_string(query["board"][0])
     board = copy_board(initial_board_state)
+    om = get_om_position(board)
     # we now have the board's initial state;
     # replay previous moves, if any
     previous_moves = []
@@ -258,7 +258,8 @@ elif "board" in query:
         if not query["moves"][0].isdigit():
             respond("moves must be integers")
         previous_moves = list(map(int, query["moves"][0]))
-        board = transform_board(board, previous_moves)
+        board = transform_board(board, om, previous_moves)
+
     # get allowed moves
     allowed_moves = get_allowed_moves(
             board = board,
